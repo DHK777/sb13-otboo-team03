@@ -1,0 +1,11 @@
+spring:
+  profiles:
+    default: dev
+  application:
+    name: sb13-otboo-team03
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
