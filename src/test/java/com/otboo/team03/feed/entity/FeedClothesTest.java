@@ -1,4 +1,3 @@
-
 package com.otboo.team03.feed.entity;
 
 import com.otboo.team03.clothes.entity.Clothes;

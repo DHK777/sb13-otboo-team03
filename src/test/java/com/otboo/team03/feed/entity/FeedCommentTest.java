@@ -1,4 +1,3 @@
-
 package com.otboo.team03.feed.entity;
 
 import org.junit.jupiter.api.Test;
