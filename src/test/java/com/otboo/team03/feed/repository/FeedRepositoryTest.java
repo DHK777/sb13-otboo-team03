@@ -1,4 +1,3 @@
-
 package com.otboo.team03.feed.repository;
 
 import com.otboo.team03.feed.entity.Feed;
