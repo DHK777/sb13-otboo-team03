@@ -4,11 +4,18 @@ import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.entity.ClothesType;
 import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
+import com.otboo.team03.feed.dto.response.AuthorDto;
+import com.otboo.team03.feed.dto.response.FeedDto;
+import com.otboo.team03.feed.dto.response.PrecipitationDto;
+import com.otboo.team03.feed.dto.response.TemperatureDto;
+import com.otboo.team03.feed.dto.response.WeatherSummaryDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedClothes;
+import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
+import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.OtbooException;
 import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
@@ -19,11 +26,12 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -44,11 +52,14 @@ class FeedServiceTest {
   @Mock
   private FeedWeatherLookupRepository weatherRepository;
 
+  @Mock
+  private FeedDtoAssembler feedDtoAssembler;
+
   @InjectMocks
   private FeedService feedService;
 
   @Test
-  void 피드_생성시_의상도_함께_연결된다() {
+  void 피드_생성시_의상을_연결하고_FeedDto를_반환한다() {
     // given
     UUID authorId = UUID.randomUUID();
     UUID weatherId = UUID.randomUUID();
@@ -79,31 +90,62 @@ class FeedServiceTest {
         author
     );
 
-    when(userRepository.existsById(authorId)).thenReturn(true);
-    when(weatherRepository.existsById(weatherId)).thenReturn(true);
+    FeedDto expectedResponse = new FeedDto(
+        UUID.randomUUID(),
+        Instant.now(),
+        Instant.now(),
+        new AuthorDto(authorId, "테스트 사용자", null),
+        new WeatherSummaryDto(
+            weatherId,
+            "CLEAR",
+            new PrecipitationDto("NONE", 0.0, 0.0),
+            new TemperatureDto(20.0, null, null, null)
+        ),
+        List.of(),
+        "오늘의 코디",
+        0L,
+        0,
+        false
+    );
+
+    when(userRepository.existsById(authorId))
+        .thenReturn(true);
+    when(weatherRepository.existsById(weatherId))
+        .thenReturn(true);
     when(clothesRepository.findAllById(request.clothesIds()))
         .thenReturn(List.of(firstClothes, secondClothes));
     when(feedRepository.save(any(Feed.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
+    when(feedDtoAssembler.toDto(any(Feed.class), isNull()))
+        .thenReturn(expectedResponse);
 
     // when
-    Feed result = feedService.create(request);
+    FeedDto result = feedService.create(request);
 
     // then
-    ArgumentCaptor<FeedClothes> captor =
+    ArgumentCaptor<Feed> feedCaptor =
+        ArgumentCaptor.forClass(Feed.class);
+
+    ArgumentCaptor<FeedClothes> clothesCaptor =
         ArgumentCaptor.forClass(FeedClothes.class);
 
-    verify(feedClothesRepository, times(2)).save(captor.capture());
+    verify(feedRepository).save(feedCaptor.capture());
+    verify(feedClothesRepository, times(2))
+        .save(clothesCaptor.capture());
 
-    List<FeedClothes> links = captor.getAllValues();
+    Feed savedFeed = feedCaptor.getValue();
+    List<FeedClothes> links = clothesCaptor.getAllValues();
+
+    verify(feedDtoAssembler).toDto(same(savedFeed), isNull());
 
     assertAll(
-        () -> assertEquals(authorId, result.getAuthorId()),
-        () -> assertEquals(weatherId, result.getWeatherId()),
-        () -> assertEquals("오늘의 코디", result.getContent()),
+        () -> assertEquals(expectedResponse, result),
+        () -> assertEquals(authorId, savedFeed.getAuthorId()),
+        () -> assertEquals(weatherId, savedFeed.getWeatherId()),
+        () -> assertEquals("오늘의 코디", savedFeed.getContent()),
         () -> assertEquals(2, links.size()),
         () -> assertTrue(links.stream().allMatch(
-            link -> link.getFeed() == result
+            link -> link.getFeed() == savedFeed
         )),
         () -> assertTrue(links.stream().anyMatch(
             link -> link.getClothes() == firstClothes
@@ -126,7 +168,8 @@ class FeedServiceTest {
         "오늘의 코디"
     );
 
-    when(userRepository.existsById(authorId)).thenReturn(false);
+    when(userRepository.existsById(authorId))
+        .thenReturn(false);
 
     // when
     OtbooException exception = assertThrows(
@@ -135,8 +178,9 @@ class FeedServiceTest {
     );
 
     // then
-    assertNotNull(exception);
+    assertEquals(ErrorCode.INVALID_INPUT_VALUE, exception.getErrorCode());
     verify(feedRepository, never()).save(any(Feed.class));
+    verifyNoInteractions(feedDtoAssembler);
   }
 
   @Test
@@ -152,8 +196,10 @@ class FeedServiceTest {
         "오늘의 코디"
     );
 
-    when(userRepository.existsById(authorId)).thenReturn(true);
-    when(weatherRepository.existsById(weatherId)).thenReturn(false);
+    when(userRepository.existsById(authorId))
+        .thenReturn(true);
+    when(weatherRepository.existsById(weatherId))
+        .thenReturn(false);
 
     // when
     OtbooException exception = assertThrows(
@@ -162,8 +208,9 @@ class FeedServiceTest {
     );
 
     // then
-    assertNotNull(exception);
+    assertEquals(ErrorCode.INVALID_INPUT_VALUE, exception.getErrorCode());
     verify(feedRepository, never()).save(any(Feed.class));
+    verifyNoInteractions(feedDtoAssembler);
   }
 
   @Test
@@ -180,8 +227,10 @@ class FeedServiceTest {
         "오늘의 코디"
     );
 
-    when(userRepository.existsById(authorId)).thenReturn(true);
-    when(weatherRepository.existsById(weatherId)).thenReturn(true);
+    when(userRepository.existsById(authorId))
+        .thenReturn(true);
+    when(weatherRepository.existsById(weatherId))
+        .thenReturn(true);
     when(clothesRepository.findAllById(request.clothesIds()))
         .thenReturn(List.of());
 
@@ -192,8 +241,9 @@ class FeedServiceTest {
     );
 
     // then
-    assertNotNull(exception);
+    assertEquals(ErrorCode.INVALID_INPUT_VALUE, exception.getErrorCode());
     verify(feedRepository, never()).save(any(Feed.class));
+    verifyNoInteractions(feedDtoAssembler);
   }
 
   @Test
@@ -215,8 +265,9 @@ class FeedServiceTest {
     );
 
     // then
-    assertNotNull(exception);
+    assertEquals(ErrorCode.INVALID_INPUT_VALUE, exception.getErrorCode());
     verify(feedRepository, never()).save(any(Feed.class));
+    verifyNoInteractions(feedDtoAssembler);
   }
 
   @Test
@@ -244,8 +295,10 @@ class FeedServiceTest {
         otherUser
     );
 
-    when(userRepository.existsById(authorId)).thenReturn(true);
-    when(weatherRepository.existsById(weatherId)).thenReturn(true);
+    when(userRepository.existsById(authorId))
+        .thenReturn(true);
+    when(weatherRepository.existsById(weatherId))
+        .thenReturn(true);
     when(clothesRepository.findAllById(request.clothesIds()))
         .thenReturn(List.of(otherUserClothes));
 
@@ -256,8 +309,9 @@ class FeedServiceTest {
     );
 
     // then
-    assertNotNull(exception);
+    assertEquals(ErrorCode.INVALID_INPUT_VALUE, exception.getErrorCode());
     verify(feedRepository, never()).save(any(Feed.class));
     verify(feedClothesRepository, never()).save(any(FeedClothes.class));
+    verifyNoInteractions(feedDtoAssembler);
   }
 }
