@@ -56,7 +56,7 @@ public class FeedService {
 
     if (clothes.stream()
         .anyMatch(item ->
-            !request.authorId().equals(item.getOwnerId()))) {
+            !request.authorId().equals(item.getOwner().getId()))) {
       throw new OtbooException(ErrorCode.INVALID_INPUT_VALUE);
     }
 
