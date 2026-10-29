@@ -3,8 +3,10 @@ package com.otboo.team03.feed.service;
 import com.otboo.team03.clothes.entity.Clothes;
 import com.otboo.team03.clothes.repository.ClothesRepository;
 import com.otboo.team03.feed.dto.request.FeedCreateRequest;
+import com.otboo.team03.feed.dto.response.FeedDto;
 import com.otboo.team03.feed.entity.Feed;
 import com.otboo.team03.feed.entity.FeedClothes;
+import com.otboo.team03.feed.mapper.FeedDtoAssembler;
 import com.otboo.team03.feed.repository.FeedClothesRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
@@ -29,9 +31,10 @@ public class FeedService {
   private final UserRepository userRepository;
   private final ClothesRepository clothesRepository;
   private final FeedWeatherLookupRepository weatherRepository;
+  private final FeedDtoAssembler feedDtoAssembler;
 
   @Transactional
-  public Feed create(FeedCreateRequest request) {
+  public FeedDto create(FeedCreateRequest request) {
     validateRequest(request);
 
     List<UUID> clothesIds = request.clothesIds() == null
@@ -74,7 +77,7 @@ public class FeedService {
       );
     }
 
-    return savedFeed;
+    return feedDtoAssembler.toDto(savedFeed, null);
   }
 
   private void validateRequest(FeedCreateRequest request) {
