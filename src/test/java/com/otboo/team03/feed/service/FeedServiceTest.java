@@ -10,6 +10,7 @@ import com.otboo.team03.feed.repository.FeedClothesRepository;
 import com.otboo.team03.feed.repository.FeedRepository;
 import com.otboo.team03.feed.repository.FeedWeatherLookupRepository;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.user.entity.User;
 import com.otboo.team03.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -54,6 +55,9 @@ class FeedServiceTest {
     UUID firstClothesId = UUID.randomUUID();
     UUID secondClothesId = UUID.randomUUID();
 
+    User author = mock(User.class);
+    when(author.getId()).thenReturn(authorId);
+
     FeedCreateRequest request = new FeedCreateRequest(
         authorId,
         weatherId,
@@ -65,14 +69,14 @@ class FeedServiceTest {
         "흰색 티셔츠",
         ClothesType.TOP,
         null,
-        authorId
+        author
     );
 
     Clothes secondClothes = new Clothes(
         "청바지",
         ClothesType.BOTTOM,
         null,
-        authorId
+        author
     );
 
     when(userRepository.existsById(authorId)).thenReturn(true);
@@ -223,6 +227,9 @@ class FeedServiceTest {
     UUID clothesId = UUID.randomUUID();
     UUID otherUserId = UUID.randomUUID();
 
+    User otherUser = mock(User.class);
+    when(otherUser.getId()).thenReturn(otherUserId);
+
     FeedCreateRequest request = new FeedCreateRequest(
         authorId,
         weatherId,
@@ -234,7 +241,7 @@ class FeedServiceTest {
         "다른 사용자의 티셔츠",
         ClothesType.TOP,
         null,
-        otherUserId
+        otherUser
     );
 
     when(userRepository.existsById(authorId)).thenReturn(true);

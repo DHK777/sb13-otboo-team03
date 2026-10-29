@@ -94,7 +94,7 @@ class FeedClothesRepositoryTest {
             "흰색 티셔츠",
             ClothesType.TOP,
             null,
-            author.getId()
+            author
         )
     );
 
