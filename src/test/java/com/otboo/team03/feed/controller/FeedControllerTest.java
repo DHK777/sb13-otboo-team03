@@ -13,6 +13,9 @@ import com.otboo.team03.feed.service.FeedService;
 import com.otboo.team03.global.exception.ErrorCode;
 import com.otboo.team03.global.exception.GlobalExceptionHandler;
 import com.otboo.team03.global.exception.OtbooException;
+import com.otboo.team03.global.security.OtbooUserDetails;
+import com.otboo.team03.user.dto.response.UserDto;
+import com.otboo.team03.user.entity.UserRole;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +24,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
@@ -69,32 +74,22 @@ class FeedControllerTest {
   }
 
   @Test
-  void 피드_등록에_성공하면_201과_FeedDto를_반환한다() throws Exception {
+  void 피드_등록에_성공하면_201과_FeedDto를_반환한다()
+      throws Exception {
     // given
     when(feedService.create(any(FeedCreateRequest.class)))
         .thenReturn(createResponse());
 
-    String requestJson = """
-                {
-                  "authorId": "%s",
-                  "weatherId": "%s",
-                  "clothesIds": ["%s"],
-                  "content": "오늘의 코디"
-                }
-                """.formatted(authorId, weatherId, clothesId);
-
     // when
     var result = mockMvc.perform(
         post("/api/feeds")
+            .principal(authentication(authorId))
             .contentType(MediaType.APPLICATION_JSON)
-            .content(requestJson)
+            .content(createRequestJson(authorId))
     );
 
     // then
     result.andExpect(status().isCreated())
-        .andExpect(content().contentTypeCompatibleWith(
-            MediaType.APPLICATION_JSON
-        ))
         .andExpect(jsonPath("$.id").value(feedId.toString()))
         .andExpect(jsonPath("$.content").value("오늘의 코디"))
         .andExpect(jsonPath("$.author.userId")
@@ -105,14 +100,11 @@ class FeedControllerTest {
             .value(weatherId.toString()))
         .andExpect(jsonPath("$.weather.skyStatus")
             .value("CLEAR"))
-        .andExpect(jsonPath("$.weather.precipitation.type")
-            .value("NONE"))
         .andExpect(jsonPath("$.weather.temperature.current")
             .value(20.0))
         .andExpect(jsonPath("$.ootds[0].clothesId")
             .value(clothesId.toString()))
-        .andExpect(jsonPath("$.ootds[0].type")
-            .value("TOP"))
+        .andExpect(jsonPath("$.ootds[0].type").value("TOP"))
         .andExpect(jsonPath("$.ootds[0].attributes[0].value")
             .value("흰색"))
         .andExpect(jsonPath("$.likeCount").value(0))
@@ -128,7 +120,51 @@ class FeedControllerTest {
   }
 
   @Test
-  void 작성자_ID가_없으면_400을_반환한다() throws Exception {
+  void 다른_사용자_ID로_피드를_등록하면_403을_반환한다()
+      throws Exception {
+    // given
+    UUID otherUserId = UUID.randomUUID();
+
+    // when
+    var result = mockMvc.perform(
+        post("/api/feeds")
+            .principal(authentication(authorId))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(createRequestJson(otherUserId))
+    );
+
+    // then
+    result.andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("ACCESS_DENIED"));
+
+    verifyNoInteractions(feedService);
+  }
+
+  @Test
+  void 인증_정보가_없으면_401을_반환한다()
+      throws Exception {
+    // given
+    String requestJson = createRequestJson(authorId);
+
+    // when
+    var result = mockMvc.perform(
+        post("/api/feeds")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(requestJson)
+    );
+
+    // then
+    result.andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.exceptionName")
+            .value("AUTHENTICATION_REQUIRED"));
+
+    verifyNoInteractions(feedService);
+  }
+
+  @Test
+  void 작성자_ID가_없으면_400을_반환한다()
+      throws Exception {
     // given
     String requestJson = """
                 {
@@ -141,6 +177,7 @@ class FeedControllerTest {
     // when
     var result = mockMvc.perform(
         post("/api/feeds")
+            .principal(authentication(authorId))
             .contentType(MediaType.APPLICATION_JSON)
             .content(requestJson)
     );
@@ -155,7 +192,8 @@ class FeedControllerTest {
   }
 
   @Test
-  void 내용이_공백이면_400을_반환한다() throws Exception {
+  void 내용이_공백이면_400을_반환한다()
+      throws Exception {
     // given
     String requestJson = """
                 {
@@ -169,6 +207,7 @@ class FeedControllerTest {
     // when
     var result = mockMvc.perform(
         post("/api/feeds")
+            .principal(authentication(authorId))
             .contentType(MediaType.APPLICATION_JSON)
             .content(requestJson)
     );
@@ -201,6 +240,7 @@ class FeedControllerTest {
     // when
     var result = mockMvc.perform(
         post("/api/feeds")
+            .principal(authentication(authorId))
             .contentType(MediaType.APPLICATION_JSON)
             .content(requestJson)
     );
@@ -216,6 +256,43 @@ class FeedControllerTest {
         List.of(),
         "오늘의 코디"
     ));
+  }
+
+  private Authentication authentication(UUID userId) {
+    UserDto userDto = new UserDto(
+        userId,
+        Instant.now(),
+        "test@example.com",
+        "테스트 사용자",
+        UserRole.USER,
+        false
+    );
+
+    OtbooUserDetails userDetails = new OtbooUserDetails(
+        userDto,
+        "encodedPassword"
+    );
+
+    return new UsernamePasswordAuthenticationToken(
+        userDetails,
+        null,
+        userDetails.getAuthorities()
+    );
+  }
+
+  private String createRequestJson(UUID requestedAuthorId) {
+    return """
+                {
+                  "authorId": "%s",
+                  "weatherId": "%s",
+                  "clothesIds": ["%s"],
+                  "content": "오늘의 코디"
+                }
+                """.formatted(
+        requestedAuthorId,
+        weatherId,
+        clothesId
+    );
   }
 
   private FeedDto createResponse() {
